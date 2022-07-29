@@ -11,7 +11,7 @@ namespace Parallelism
     {
         public Threadic()
         {
-            ThreadParameter();
+            LockThread();
         }
     }
 
@@ -21,6 +21,91 @@ namespace Parallelism
     public partial class Threadic
     {
         private bool abortSign = false;
+
+        abstract class CounterBase
+        {
+            protected int count { get; set; }
+            public int Count => count;
+
+            public abstract void Increment();
+            public abstract void Decrement();
+        }
+
+        class Counter : CounterBase
+        {
+            public override void Decrement()
+            {
+                count--;
+            }
+
+            public override void Increment()
+            {
+                count++;
+            }
+        }
+
+        class CounterWithLock : CounterBase
+        {
+            private readonly object sync = new Object();
+
+            public override void Increment()
+            {
+                lock(sync) count++;
+            }
+
+            public override void Decrement()
+            {
+                lock(sync) count--;
+            }
+        }
+
+        private void LockThread()
+        {
+            var CounterFun = (CounterBase c) =>
+            {
+                foreach(var i in Enumerable.Range(1, 100000))
+                {
+                    c.Increment();
+                    c.Decrement();
+                }
+            };
+
+            Console.WriteLine("Counter without lock");
+
+            var c = new Counter();
+
+            var t1 = new Thread(() => CounterFun(c));
+            var t2 = new Thread(() => CounterFun(c));
+            var t3 = new Thread(() => CounterFun(c));
+
+            t1.Start();
+            t2.Start();
+            t3.Start();
+
+            t1.Join();
+            t2.Join();
+            t3.Join();
+
+            Console.WriteLine("Total count : {0}", c.Count);
+
+            Console.WriteLine("Counter with lock");
+
+            var cl = new CounterWithLock();
+
+            t1 = new Thread(() => CounterFun(cl));
+            t2 = new Thread(() => CounterFun(cl));
+            t3 = new Thread(() => CounterFun(cl));
+
+            t1.Start();
+            t2.Start();
+            t3.Start();
+
+            t1.Join();
+            t2.Join();
+            t3.Join();
+
+            Console.WriteLine("Total count : {0}", cl.Count);
+        }
 
         private void ThreadParameter()
         {
@@ -223,6 +308,14 @@ namespace Parallelism
                 Console.WriteLine("Thread is aborted");
                 abortSign = false;
             }
+        }
+    }
+
+    public class Program
+    {
+        public static void Main(string[] args)
+        {
+            new Threadic();
         }
     }
 }

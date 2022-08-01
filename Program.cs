@@ -11,20 +11,18 @@ namespace Parallelism
     {
         public Threadic()
         {
-            LockThread();
+            AtomicOperation();
         }
     }
 
     /*
-        Chapter 1
+        Chapter 2
     */
     public partial class Threadic
     {
-        private bool abortSign = false;
-
         abstract class CounterBase
         {
-            protected int count { get; set; }
+            protected int count;
             public int Count => count;
 
             public abstract void Increment();
@@ -56,6 +54,151 @@ namespace Parallelism
             public override void Decrement()
             {
                 lock(sync) count--;
+            }
+        }
+
+        class CounterNoLock : CounterBase
+        {
+            public override void Increment()
+            {
+                Interlocked.Increment(ref count);
+            }
+
+            public override void Decrement()
+            {
+                Interlocked.Decrement(ref count);
+            }
+        }
+
+        private void AtomicOperation()
+        {
+            Action<CounterBase> TestCounter = (CounterBase c) =>
+            {
+                for(var i = 0; i < 100000; i++)
+                {
+                    c.Increment();
+                    c.Decrement();
+                }
+            };
+
+            var c = new Counter();
+
+            var th1 = new Thread(() => TestCounter(c));
+            var th2 = new Thread(() => TestCounter(c));
+            var th3 = new Thread(() => TestCounter(c));
+            th1.Start();
+            th2.Start();
+            th3.Start();
+            th1.Join();
+            th2.Join();
+            th3.Join();
+
+            Console.WriteLine("Incorrect Count : {0}", c.Count);
+
+            var cl = new CounterWithLock();
+
+            th1 = new Thread(() => TestCounter(cl));
+            th2 = new Thread(() => TestCounter(cl));
+            th3 = new Thread(() => TestCounter(cl));
+            th1.Start();
+            th2.Start();
+            th3.Start();
+            th1.Join();
+            th2.Join();
+            th3.Join();
+
+            Console.WriteLine("Correct Count : {0}", cl.Count);
+        }
+    }
+
+    /*
+        Chapter 1
+    */
+    public partial class Threadic
+    {
+        private bool abortSign = false;
+
+        private void ThreadException()
+        {
+            Action Faulty = () => 
+            {
+                try 
+                {
+                    Console.WriteLine("Starting a faulty thread");
+                    Thread.Sleep(TimeSpan.FromSeconds(1));
+                    throw new Exception("Boom!");
+                }
+                catch(Exception ex)
+                {
+                    Console.WriteLine("Exception handled : {0}", ex.Message);
+                }
+            };
+
+            Action BadFaulty = () =>
+            {   
+                 Console.WriteLine("Starting a faulty thread");
+                Thread.Sleep(TimeSpan.FromSeconds(1));
+                throw new Exception("Boom!");
+            };
+
+            var th = new Thread(() => Faulty());
+            th.Start();
+            th.Join();
+
+            try
+            {
+                th = new Thread(() => BadFaulty());
+                th.Start();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("We won't get here!");
+            }
+        }
+
+        private void DeadLock()
+        {
+            Action<object, object> TooMuchLock = (object lck1, object lck2) => 
+            {
+                lock(lck1) 
+                {
+                    Thread.Sleep(1000);
+                    lock(lck2);
+                }
+            };
+
+            var lck1 = new Object();
+            var lck2 = new Object();
+
+            new Thread(() => TooMuchLock(lck1, lck2)).Start();
+
+            lock(lck2) 
+            {
+                Thread.Sleep(1000);
+                Console.WriteLine("Monitor try enter");
+                
+                if(Monitor.TryEnter(lck1, TimeSpan.FromSeconds(2)))
+                {
+                    Console.WriteLine("Acquired a protected resource successfully");
+                }
+                else
+                {
+                    Console.WriteLine("Timeout acquiring a resource");
+                }
+            }
+
+            new Thread(() => TooMuchLock(lck1, lck2)).Start();
+
+            Console.WriteLine("==================================");
+            lock(lck2)
+            {
+                Console.WriteLine("This will be deadlock");
+                Thread.Sleep(1000);
+
+                lock(lck1) 
+                {
+                    Console.WriteLine("Acquired resource successfully");
+                }
             }
         }
 
